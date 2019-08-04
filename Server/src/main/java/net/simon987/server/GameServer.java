@@ -1,12 +1,10 @@
 package net.simon987.server;
 
-
-import com.mongodb.MongoClient;
-import com.mongodb.client.MongoCollection;
-import com.mongodb.client.MongoCursor;
-import com.mongodb.client.MongoDatabase;
+import com.mongodb.MongoClientException;
+import com.mongodb.client.*;
 import com.mongodb.client.model.ReplaceOptions;
 import net.simon987.server.crypto.CryptoProvider;
+import net.simon987.server.crypto.SecretKeyGenerator;
 import net.simon987.server.event.GameEvent;
 import net.simon987.server.event.GameEventDispatcher;
 import net.simon987.server.event.TickEvent;
@@ -15,17 +13,16 @@ import net.simon987.server.game.debug.*;
 import net.simon987.server.game.item.ItemCopper;
 import net.simon987.server.game.item.ItemIron;
 import net.simon987.server.game.objects.GameRegistry;
-import net.simon987.server.game.world.DayNightCycle;
-import net.simon987.server.game.world.World;
+import net.simon987.server.game.world.*;
 import net.simon987.server.logging.LogManager;
 import net.simon987.server.plugin.PluginManager;
+import net.simon987.server.plugin.ServerPlugin;
 import net.simon987.server.user.User;
 import net.simon987.server.user.UserManager;
 import net.simon987.server.user.UserStatsHelper;
 import net.simon987.server.websocket.SocketServer;
 import org.bson.Document;
 
-import java.io.File;
 import java.util.ArrayList;
 
 public class GameServer implements Runnable {
@@ -36,7 +33,7 @@ public class GameServer implements Runnable {
     private GameEventDispatcher eventDispatcher;
     private PluginManager pluginManager;
 
-    private ServerConfiguration config;
+    private IServerConfiguration config;
 
     private SocketServer socketServer;
 
@@ -54,10 +51,14 @@ public class GameServer implements Runnable {
 
     private GameRegistry gameRegistry;
 
+    private String secretKey;
+
     public GameServer() {
         this.config = new ServerConfiguration("config.properties");
 
-        mongo = new MongoClient(config.getString("mongo_address"), config.getInt("mongo_port"));
+        String connString = String.format("mongodb://%s:%d",
+                config.getString("mongo_address"), config.getInt("mongo_port"));
+        mongo = MongoClients.create(connString);
         MongoDatabase db = mongo.getDatabase(config.getString("mongo_dbname"));
 
         MongoCollection<Document> userCollection = db.getCollection("user");
@@ -67,8 +68,8 @@ public class GameServer implements Runnable {
 
         gameUniverse = new GameUniverse(config);
         gameUniverse.setMongo(mongo);
-        pluginManager = new PluginManager();
         gameRegistry = new GameRegistry();
+        pluginManager = new PluginManager(this);
 
         maxExecutionTime = config.getInt("user_timeout");
 
@@ -76,21 +77,15 @@ public class GameServer implements Runnable {
 
         dayNightCycle = new DayNightCycle();
 
-        //Load all plugins in plugins folder, if it doesn't exist, create it
-        File pluginDir = new File("plugins/");
-        File[] pluginDirListing = pluginDir.listFiles();
+        SecretKeyGenerator keyGenerator = new SecretKeyGenerator();
+        secretKey = config.getString("secret_key");
+        if (secretKey == null) {
+            secretKey = keyGenerator.generate();
+            config.setString("secret_key", secretKey);
+        }
 
-        if (pluginDirListing != null) {
-            for (File pluginFile : pluginDirListing) {
-
-                if (pluginFile.getName().endsWith(".jar")) {
-                    pluginManager.load(pluginFile, config, gameRegistry);
-                }
-            }
-        } else {
-            if (!pluginDir.mkdir()) {
-                LogManager.LOGGER.severe("Couldn't create plugin directory");
-            }
+        if (!pluginManager.loadInFolder("plugins/")) {
+            System.exit(-1);
         }
 
         eventDispatcher = new GameEventDispatcher(pluginManager);
@@ -113,6 +108,13 @@ public class GameServer implements Runnable {
 
         gameRegistry.registerItem(ItemCopper.ID, ItemCopper.class);
         gameRegistry.registerItem(ItemIron.ID, ItemIron.class);
+
+        gameRegistry.registerTile(TileVoid.ID, TileVoid.class);
+        gameRegistry.registerTile(TilePlain.ID, TilePlain.class);
+        gameRegistry.registerTile(TileWall.ID, TileWall.class);
+        gameRegistry.registerTile(TileCopper.ID, TileCopper.class);
+        gameRegistry.registerTile(TileIron.ID, TileIron.class);
+        gameRegistry.registerTile(TileFluid.ID, TileFluid.class);
     }
 
     public GameUniverse getGameUniverse() {
@@ -123,7 +125,7 @@ public class GameServer implements Runnable {
         return eventDispatcher;
     }
 
-    public CryptoProvider getCryptoProvider(){
+    public CryptoProvider getCryptoProvider() {
         return cryptoProvider;
     }
 
@@ -145,8 +147,6 @@ public class GameServer implements Runnable {
 
             uTime = System.currentTimeMillis() - startTime;
             waitTime = config.getInt("tick_length") - uTime;
-
-//            LogManager.LOGGER.info("Wait time : " + waitTime + "ms | Update time: " + uTime + "ms | " + (int) (((double) uTime / waitTime) * 100) + "% load");
 
             try {
                 if (waitTime >= 0) {
@@ -176,21 +176,19 @@ public class GameServer implements Runnable {
                     user.getControlledUnit().getCpu().reset();
                     int cost = user.getControlledUnit().getCpu().execute(timeout);
                     user.getControlledUnit().spendEnergy(cost);
+                    user.addTime(cost);
 
                 } catch (Exception e) {
                     LogManager.LOGGER.severe("Error executing " + user.getUsername() + "'s code");
                     e.printStackTrace();
                 }
-
             }
         }
 
         //Process each worlds
-        int updatedWorlds = 0;
         for (World world : gameUniverse.getWorlds()) {
             if (world.shouldUpdate()) {
                 world.update();
-                updatedWorlds++;
             }
         }
 
@@ -200,9 +198,6 @@ public class GameServer implements Runnable {
         }
 
         socketServer.tick();
-
-//        LogManager.LOGGER.info("Processed " + gameUniverse.getWorldCount() + " worlds (" + updatedWorlds +
-//                " updated)");
     }
 
     void load() {
@@ -219,7 +214,7 @@ public class GameServer implements Runnable {
         MongoCursor<Document> cursor = worlds.find(whereQuery).iterator();
         GameUniverse universe = GameServer.INSTANCE.getGameUniverse();
         while (cursor.hasNext()) {
-        	World w = World.deserialize(cursor.next());
+            World w = World.deserialize(cursor.next());
             universe.addWorld(w);
         }
 
@@ -229,11 +224,18 @@ public class GameServer implements Runnable {
             universe.addUser(user);
         }
 
-        //Load misc server info
+        //Load server & plugin data
         cursor = server.find().iterator();
         if (cursor.hasNext()) {
             Document serverObj = cursor.next();
             gameUniverse.setTime((long) serverObj.get("time"));
+
+            Document plugins = (Document) serverObj.get("plugins");
+
+            for (String pluginName : plugins.keySet()) {
+                ServerPlugin plugin = pluginManager.getPluginByName(pluginName);
+                plugin.load((Document) plugins.get(pluginName));
+            }
         }
 
         LogManager.LOGGER.info("Done loading! W:" + GameServer.INSTANCE.getGameUniverse().getWorldCount() +
@@ -243,49 +245,73 @@ public class GameServer implements Runnable {
     public void save() {
 
         LogManager.LOGGER.info("Saving to MongoDB | W:" + gameUniverse.getWorldCount() + " | U:" + gameUniverse.getUserCount());
-        try{
+
+        ClientSession session = null;
+        try {
+            try {
+                session = mongo.startSession();
+                session.startTransaction();
+            } catch (MongoClientException e) {
+                LogManager.LOGGER.fine("Could not create mongoDB session, will not use transaction feature. " +
+                        "(This message can be safely ignored)");
+            }
+
             MongoDatabase db = mongo.getDatabase(config.getString("mongo_dbname"));
             ReplaceOptions updateOptions = new ReplaceOptions();
             updateOptions.upsert(true);
 
-	        int unloaded_worlds = 0;
+            int unloaded_worlds = 0;
 
             MongoCollection<Document> worlds = db.getCollection("world");
             MongoCollection<Document> users = db.getCollection("user");
             MongoCollection<Document> server = db.getCollection("server");
 
-	        int insertedWorlds = 0;
-	        GameUniverse universe = GameServer.INSTANCE.getGameUniverse();
+            int insertedWorlds = 0;
+            GameUniverse universe = GameServer.INSTANCE.getGameUniverse();
             for (World w : universe.getWorlds()) {
                 insertedWorlds++;
                 worlds.replaceOne(new Document("_id", w.getId()), w.mongoSerialise(), updateOptions);
 
                 //If the world should unload, it is removed from the Universe after having been saved.
-	        	if (w.shouldUnload()){
-	        		unloaded_worlds++;
+                if (w.shouldUnload()) {
+                    unloaded_worlds++;
                     universe.removeWorld(w);
-	        	}
-	        }
+                }
+            }
 
             for (User u : GameServer.INSTANCE.getGameUniverse().getUsers()) {
-	            if (!u.isGuest()) {
+                if (!u.isGuest()) {
                     users.replaceOne(new Document("_id", u.getUsername()), u.mongoSerialise(), updateOptions);
-	            }
-	        }
+                }
+            }
 
             Document serverObj = new Document();
-	        serverObj.put("time", gameUniverse.getTime());
+            serverObj.put("time", gameUniverse.getTime());
+
+            Document plugins = new Document();
+            for (ServerPlugin plugin : pluginManager.getPlugins()) {
+                plugins.put(plugin.getName(), plugin.mongoSerialise());
+            }
+            serverObj.put("plugins", plugins);
+
             //A constant id ensures only one entry is kept and updated, instead of a new entry created every save.
             server.replaceOne(new Document("_id", "serverinfo"), serverObj, updateOptions);
+            if (session != null) {
+                session.commitTransaction();
+            }
 
             LogManager.LOGGER.info("" + insertedWorlds + " worlds saved, " + unloaded_worlds + " unloaded");
         } catch (Exception e) {
             LogManager.LOGGER.severe("Problem happened during save function");
             e.printStackTrace();
+
+            if (session != null) {
+                session.commitTransaction();
+            }
         }
     }
 
-    public ServerConfiguration getConfig() {
+    public IServerConfiguration getConfig() {
         return config;
     }
 
@@ -311,5 +337,14 @@ public class GameServer implements Runnable {
 
     public GameRegistry getRegistry() {
         return gameRegistry;
+    }
+
+    public String getSecretKey() {
+        return secretKey;
+    }
+
+    public void setSecretKey(String secretKey) {
+        this.secretKey = secretKey;
+        config.setString("secret_key", secretKey);
     }
 }

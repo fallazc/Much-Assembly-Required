@@ -1,7 +1,7 @@
 package net.simon987.server.assembly;
 
 import net.simon987.server.GameServer;
-import net.simon987.server.ServerConfiguration;
+import net.simon987.server.IServerConfiguration;
 import net.simon987.server.assembly.exception.CancelledException;
 import net.simon987.server.assembly.instruction.*;
 import net.simon987.server.event.CpuInitialisationEvent;
@@ -55,19 +55,50 @@ public class CPU implements MongoSerializable {
      */
     private HardwareHost hardwareHost;
 
-
-    private ServerConfiguration config;
-
     private int registerSetSize;
 
     private static final char EXECUTION_COST_ADDR = 0x0050;
     private static final char EXECUTED_INS_ADDR = 0x0051;
 
+    public CPU() {
+        instructionSet = new DefaultInstructionSet();
+        registerSet = new DefaultRegisterSet();
+        codeSectionOffset = GameServer.INSTANCE.getConfig().getInt("org_offset");
+
+        instructionSet.add(new JmpInstruction(this));
+        instructionSet.add(new JnzInstruction(this));
+        instructionSet.add(new JzInstruction(this));
+        instructionSet.add(new JgInstruction(this));
+        instructionSet.add(new JgeInstruction(this));
+        instructionSet.add(new JleInstruction(this));
+        instructionSet.add(new JlInstruction(this));
+        instructionSet.add(new PushInstruction(this));
+        instructionSet.add(new PopInstruction(this));
+        instructionSet.add(new CallInstruction(this));
+        instructionSet.add(new RetInstruction(this));
+        instructionSet.add(new MulInstruction(this));
+        instructionSet.add(new DivInstruction(this));
+        instructionSet.add(new JnsInstruction(this));
+        instructionSet.add(new JsInstruction(this));
+        instructionSet.add(new HwiInstruction(this));
+        instructionSet.add(new HwqInstruction(this));
+        instructionSet.add(new XchgInstruction(this));
+        instructionSet.add(new JcInstruction(this));
+        instructionSet.add(new JncInstruction(this));
+        instructionSet.add(new JnoInstruction(this));
+        instructionSet.add(new JoInstruction(this));
+        instructionSet.add(new PushfInstruction(this));
+        instructionSet.add(new PopfInstruction(this));
+        instructionSet.add(new JnaInstruction(this));
+        instructionSet.add(new JaInstruction(this));
+
+        status = new Status();
+    }
+
     /**
      * Creates a new CPU
      */
-    public CPU(ServerConfiguration config, ControllableUnit unit) throws CancelledException {
-        this.config = config;
+    public CPU(IServerConfiguration config, ControllableUnit unit) throws CancelledException {
         instructionSet = new DefaultInstructionSet();
         registerSet = new DefaultRegisterSet();
         codeSectionOffset = config.getInt("org_offset");
@@ -363,7 +394,6 @@ public class CPU implements MongoSerializable {
 
         cpu.codeSectionOffset = obj.getInteger("codeSegmentOffset");
 
-
         cpu.memory = new Memory((Document) obj.get("memory"));
         cpu.registerSet = RegisterSet.deserialize((Document) obj.get("registerSet"));
 
@@ -383,6 +413,14 @@ public class CPU implements MongoSerializable {
         return memory;
     }
 
+    public void setMemory(Memory memory) {
+        this.memory = memory;
+    }
+
+    public void setRegisterSet(RegisterSet registerSet) {
+        this.registerSet = registerSet;
+    }
+
     public Status getStatus() {
         return status;
     }
@@ -393,6 +431,10 @@ public class CPU implements MongoSerializable {
 
     public void setIp(char ip) {
         this.ip = ip;
+    }
+
+    public int getCodeSectionOffset() {
+        return codeSectionOffset;
     }
 
     public void setCodeSectionOffset(int codeSectionOffset) {

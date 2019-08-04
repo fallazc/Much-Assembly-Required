@@ -4,6 +4,8 @@ OPERAND_MEM_IMM = 1;
 OPERAND_MEM_REG = 2;
 OPERAND_IMM = 3;
 
+MALFORMED_UTF16_RE = /\\u[0-9a-fA-F]{0,3}([^0-9a-fA-F]|$)/;
+
 //Remove default syntax checker
 editor = ace.edit("editor");
 editor.session.setOption("useWorker", false);
@@ -26,7 +28,7 @@ function checkForLabel(line, result) {
     line = removeComment(line);
 
     var match;
-    if ((match = /\b\w*\b:/.exec(line)) !== null) {
+    if ((match = /^[a-zA-Z_]\w*:/.exec(line)) !== null) {
 
         result.labels.push(match[0].substring(0, match[0].length - 1));
     }
@@ -117,12 +119,10 @@ function checkForORGInstruction(line, result, currentLine) {
 function parseDWInstruction(line, result, currentLine) {
     line = line.trim();
 
-
     if (line.substr(0, 2).toLowerCase() === "dw") {
 
 
         var values = line.substr(2, line.length).split(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/, -1);
-
 
         for (var i = 0; i < values.length; i++) {
 
@@ -137,6 +137,20 @@ function parseDWInstruction(line, result, currentLine) {
 
             } else if (values[i].startsWith("\"") && values[i].endsWith("\"")) {
                 //Handle string
+                var strText = values[i].substr(1, values[i].length - 2);
+
+                if (strText.match(MALFORMED_UTF16_RE) != null) {
+
+                    result.annotations.push({
+                        row: currentLine,
+                        column: 0,
+                        text: "Malformed UTF-16 escape sequence",
+                        type: "error"
+                    });
+                    return true;
+                }
+
+                //TODO: verify other escape sequences
 
             } else if (getOperandType(values[i], result) === OPERAND_IMM) {
 
@@ -261,6 +275,7 @@ function parseInstruction(line, result, currentLine) {
     if (!parseDWInstruction(line, result, currentLine)) {
 
         if (new RegExp('\\b(?:mov|add|sub|and|or|test|cmp|shl|shr|mul|push|pop|div|xor|hwi|hwq|nop|neg|' +
+            'seta|setnbe|setae|setnb|setnc|setbe|setna|setb|setc|setnae|sete|setz|setne|setnz|setg|setnle|setge|setnl|setle|setng|setl|setnge|seto|setno|sets|setns|' +
             'call|ret|jmp|jnz|jg|jl|jge|jle|int|jz|js|jns|brk|not|jc|jnc|ror|rol|sal|sar|jo|jno|inc|dec|rcl|xchg|rcr|pushf|popf|ja|jna)\\b').test(mnemonic.toLowerCase())) {
 
 
@@ -319,7 +334,7 @@ function parseInstruction(line, result, currentLine) {
                 strO1 = line.substring(line.indexOf(mnemonic) + mnemonic.length).trim();
 
                 //Validate operand number
-                if (!new RegExp('\\b(?:push|mul|pop|div|neg|call|jnz|jg|jl|jge|jle|hwi|hwq|jz|js|jns|ret|jmp|not|jc|jnc|jo|jno|inc|dec|ja|jna)\\b').test(mnemonic.toLowerCase())) {
+                if (!new RegExp('\\b(?:push|mul|pop|div|neg|call|jnz|jg|jl|jge|jle|hwi|hwq|jz|js|jns|ret|jmp|not|jc|jnc|jo|jno|inc|dec|ja|jna|seta|setnbe|setae|setnb|setnc|setbe|setna|setb|setc|setnae|sete|setz|setne|setnz|setg|setnle|setge|setnl|setle|setng|setl|setnge|seto|setno|sets|setns)\\b').test(mnemonic.toLowerCase())) {
                     result.annotations.push({
                         row: currentLine,
                         column: 0,
@@ -339,6 +354,16 @@ function parseInstruction(line, result, currentLine) {
                     });
                 }
 
+                if (new RegExp('\\b(?:seta|setnbe|setae|setnb|setnc|setbe|setna|setb|setc|setnae|sete|setz|setne|setnz|setg|setnle|setge|setnl|setle|setng|setl|setnge|seto|setno|sets|setns)\\b').test(mnemonic.toLowerCase())) {
+                    if (getOperandType(strO1, result) === OPERAND_IMM) {
+                        result.annotations.push({
+                            row: currentLine,
+                            column: 0,
+                            text: "Invalid operand type: " + strO1,
+                            type: "error"
+                        });
+                    }
+                }
 
             } else {
                 //No operand

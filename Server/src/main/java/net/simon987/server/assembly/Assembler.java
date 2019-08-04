@@ -1,7 +1,6 @@
 package net.simon987.server.assembly;
 
-import net.simon987.server.GameServer;
-import net.simon987.server.ServerConfiguration;
+import net.simon987.server.IServerConfiguration;
 import net.simon987.server.assembly.exception.*;
 import net.simon987.server.logging.LogManager;
 import org.apache.commons.text.StringEscapeUtils;
@@ -19,18 +18,22 @@ import java.util.regex.Pattern;
  */
 public class Assembler {
 
-    private ServerConfiguration config;
+    private IServerConfiguration config;
 
     private InstructionSet instructionSet;
 
     private RegisterSet registerSet;
 
-    private static final int MEM_SIZE = GameServer.INSTANCE.getConfig().getInt("memory_size");
+    private static int MEM_SIZE;
+    private static String labelPattern = "^\\s*[a-zA-Z_]\\w*:";
+    private static Pattern commentPattern = Pattern.compile("\"[^\"]*\"|(;)");
 
-    public Assembler(InstructionSet instructionSet, RegisterSet registerSet, ServerConfiguration config) {
+    public Assembler(InstructionSet instructionSet, RegisterSet registerSet, IServerConfiguration config) {
         this.instructionSet = instructionSet;
         this.registerSet = registerSet;
         this.config = config;
+
+        Assembler.MEM_SIZE = config.getInt("memory_size");
     }
 
     /**
@@ -40,11 +43,17 @@ public class Assembler {
      * @return The line without its comment part
      */
     private static String removeComment(String line) {
-        if (line.indexOf(';') != -1) {
-            return line.substring(0, line.indexOf(';'));
-        } else {
-            return line;
+
+        Matcher m = commentPattern.matcher(line);
+
+        while (m.find()) {
+            try {
+                return line.substring(0, m.start(1));
+            } catch (IndexOutOfBoundsException ignored) {
+            }
         }
+
+        return line;
     }
 
     /**
@@ -55,8 +64,7 @@ public class Assembler {
      */
     private static String removeLabel(String line) {
 
-        return line.replaceAll("^\\s*\\b\\w*\\b:", "");
-
+        return line.replaceAll(labelPattern, "");
     }
 
     /**
@@ -98,7 +106,7 @@ public class Assembler {
         line = removeComment(line);
 
         //Check for labels
-        Pattern pattern = Pattern.compile("^\\s*\\b\\w*\\b:");
+        Pattern pattern = Pattern.compile(labelPattern);
         Matcher matcher = pattern.matcher(line);
 
         if (matcher.find()) {
@@ -140,7 +148,7 @@ public class Assembler {
             try {
 
                 //Special thanks to https://stackoverflow.com/questions/1757065/
-                String[] values = line.substring(2, line.length()).split(",(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)", -1);
+                String[] values = line.substring(2).split(",(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)", -1);
 
                 for (String value : values) {
 
@@ -161,7 +169,7 @@ public class Assembler {
                             string = StringEscapeUtils.unescapeJava(string);
                         } catch (IllegalArgumentException e) {
                             throw new InvalidOperandException(
-                                "Invalid string operand \"" + string + "\": " + e.getMessage(), 
+                                    "Invalid string operand \"" + string + "\": " + e.getMessage(),
                                 currentLine);
                         }
 
@@ -210,6 +218,17 @@ public class Assembler {
 
         return bos.toByteArray();
 
+    }
+    
+    /**
+     * Parse the DW instruction (Define word). Handles DUP operator
+     *
+     * @param line        Current line. assuming that comments and labels are removed
+     * @param currentLine Current line number
+     * @return Encoded instruction, null if the line is not a DW instruction
+     */
+    private static byte[] parseDWInstruction(String line, int currentLine) throws AssemblyException {
+        return parseDWInstruction(line, null, currentLine);
     }
 
     /**
@@ -264,17 +283,6 @@ public class Assembler {
     }
 
     /**
-     * Parse the DW instruction (Define word). Handles DUP operator
-     *
-     * @param line        Current line. assuming that comments and labels are removed
-     * @param currentLine Current line number
-     * @return Encoded instruction, null if the line is not a DW instruction
-     */
-    private static byte[] parseDWInstruction(String line, int currentLine) throws AssemblyException {
-        return parseDWInstruction(line, null, currentLine);
-    }
-
-    /**
      * Check for and handle section declarations (.text and .data)
      *
      * @param line Current line
@@ -286,14 +294,14 @@ public class Assembler {
 
         if (tokens[0].toUpperCase().equals(".TEXT")) {
 
-            result.defineSecton(Section.TEXT, currentLine, currentOffset);
+            result.defineSection(Section.TEXT, currentLine, currentOffset);
             throw new PseudoInstructionException(currentLine);
 
         } else if (tokens[0].toUpperCase().equals(".DATA")) {
 
             LogManager.LOGGER.fine("DEBUG: .data @" + currentLine);
 
-            result.defineSecton(Section.DATA, currentLine, currentOffset);
+            result.defineSection(Section.DATA, currentLine, currentOffset);
             throw new PseudoInstructionException(currentLine);
         }
     }
@@ -536,13 +544,13 @@ public class Assembler {
 
         if (instructionSet.get(mnemonic) == null) {
             throw new InvalidMnemonicException(mnemonic, currentLine);
-
         }
 
         //Check operands and encode instruction
+        final int beginIndex = line.indexOf(mnemonic) + mnemonic.length();
         if (line.contains(",")) {
             //2 operands
-            String strO1 = line.substring(line.indexOf(mnemonic) + mnemonic.length(), line.indexOf(','));
+            String strO1 = line.substring(beginIndex, line.indexOf(','));
             String strO2 = line.substring(line.indexOf(','));
 
             Operand o1, o2;
@@ -562,7 +570,7 @@ public class Assembler {
         } else if (tokens.length > 1) {
             //1 operand
 
-            String strO1 = line.substring(line.indexOf(mnemonic) + mnemonic.length());
+            String strO1 = line.substring(beginIndex);
 
             Operand o1;
             if (assumeLabels) {
@@ -583,6 +591,5 @@ public class Assembler {
         }
 
         return out.toByteArray();
-
     }
 }

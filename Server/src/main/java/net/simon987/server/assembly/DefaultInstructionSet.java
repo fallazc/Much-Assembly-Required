@@ -1,9 +1,9 @@
 package net.simon987.server.assembly;
 
 import net.simon987.server.assembly.instruction.*;
-import net.simon987.server.logging.LogManager;
 
 import java.util.HashMap;
+import java.util.Map;
 
 /**
  * Default instruction set for the CPU
@@ -13,7 +13,12 @@ public class DefaultInstructionSet implements InstructionSet {
     /**
      * Map of instructions, stored in opcode : Instruction format
      */
-    private HashMap<Integer, Instruction> instructionMap = new HashMap<>(32);
+    private Map<Integer, Instruction> instructionMap = new HashMap<>(32);
+
+    /**
+     * Map of aliasses, stored in mnemonic : Instruction format
+     */
+    private Map<String, Instruction> aliasesMap = new HashMap<>(16);
 
     private Instruction defaultInstruction;
 
@@ -32,7 +37,6 @@ public class DefaultInstructionSet implements InstructionSet {
         add(new AndInstruction());
         add(new OrInstruction());
         add(new ShlInstruction());
-        add(new SalInstruction()); //Alias is added
         add(new ShrInstruction());
         add(new XorInstruction());
         add(new TestInstruction());
@@ -46,6 +50,40 @@ public class DefaultInstructionSet implements InstructionSet {
         add(new SarInstruction());
         add(new IncInstruction());
         add(new DecInstruction());
+
+        // 'abstract' instruction
+        add(new SetccInstruction());
+
+        // aliases
+        add(new SalInstruction());
+
+        // Setcc family
+        add(new SetaeInstruction());
+        add(new SetaInstruction());
+        add(new SetbeInstruction());
+        add(new SetbInstruction());
+        add(new SetcInstruction());
+        add(new SeteInstruction());
+        add(new SetgeInstruction());
+        add(new SetgInstruction());
+        add(new SetleInstruction());
+        add(new SetlInstruction());
+        add(new SetnaeInstruction());
+        add(new SetnaInstruction());
+        add(new SetnbeInstruction());
+        add(new SetnbInstruction());
+        add(new SetncInstruction());
+        add(new SetneInstruction());
+        add(new SetngeInstruction());
+        add(new SetngInstruction());
+        add(new SetnleInstruction());
+        add(new SetnlInstruction());
+        add(new SetnoInstruction());
+        add(new SetnsInstruction());
+        add(new SetnzInstruction());
+        add(new SetoInstruction());
+        add(new SetsInstruction());
+        add(new SetzInstruction());
     }
 
     /**
@@ -86,18 +124,22 @@ public class DefaultInstructionSet implements InstructionSet {
             }
         }
 
+        Instruction aliasedInstruction = aliasesMap.get(mnemonic.toLowerCase());
+        if (aliasedInstruction != null) {
+            return aliasedInstruction;
+        }
+
         return null;
     }
 
 
     @Override
     public void add(Instruction instruction) {
-        if (instructionMap.containsKey(instruction.getOpCode())) {
-            LogManager.LOGGER.fine(instruction.getMnemonic() + " instruction is an alias for " +
-                    instructionMap.get(instruction.getOpCode()).getMnemonic());
+        Instruction aliasedInstruction = instructionMap.get(instruction.getOpCode());
+        if (aliasedInstruction != null) {
+            aliasesMap.put(instruction.getMnemonic(), instruction);
         } else {
             instructionMap.put(instruction.getOpCode(), instruction);
-
         }
     }
 }

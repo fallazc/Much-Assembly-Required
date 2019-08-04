@@ -9,7 +9,6 @@
     <version>1.4a</version>
     <packaging>pom</packaging>
 
-
     <build>
         <plugins>
             <plugin>
@@ -45,6 +44,7 @@
         <module>Plugin Misc HW</module>
         <module>Plugin Cubot</module>
         <module>Plugin Radioactive Cloud</module>
+        <module>plugin-contruction</module>
     </modules>
 
     <properties>

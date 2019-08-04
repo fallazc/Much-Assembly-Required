@@ -1,7 +1,7 @@
 package net.simon987.cubotplugin;
 
 import net.simon987.cubotplugin.event.*;
-import net.simon987.server.ServerConfiguration;
+import net.simon987.server.GameServer;
 import net.simon987.server.game.objects.GameRegistry;
 import net.simon987.server.logging.LogManager;
 import net.simon987.server.plugin.ServerPlugin;
@@ -10,7 +10,7 @@ public class CubotPlugin extends ServerPlugin {
 
 
     @Override
-    public void init(ServerConfiguration config, GameRegistry registry) {
+    public void init(GameServer gameServer) {
         listeners.add(new CpuInitialisationListener());
         listeners.add(new UserCreationListener());
         //Debug commands
@@ -18,6 +18,11 @@ public class CubotPlugin extends ServerPlugin {
         listeners.add(new SetInventoryPosition());
         listeners.add(new PutItemCommandListener());
         listeners.add(new PopItemCommandListener());
+        //Leaderboard
+        listeners.add(new DeathListener());
+        listeners.add(new WalkListener());
+
+        GameRegistry registry = gameServer.getRegistry();
 
         registry.registerGameObject(Cubot.class);
 
@@ -34,6 +39,6 @@ public class CubotPlugin extends ServerPlugin {
         registry.registerHardware(CubotShield.class);
         registry.registerHardware(CubotCore.class);
 
-        LogManager.LOGGER.info("Initialised Cubot plugin");
+        LogManager.LOGGER.info("(Cubot Plugin) Initialised Cubot plugin");
     }
 }

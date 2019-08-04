@@ -85,10 +85,12 @@ class TickListener implements MessageListener {
 
         //Update console screen
         if (message.c != undefined) {
-            mar.client.consoleScreen.handleConsoleBufferUpdate(message.c, message.cm as ConsoleMode);
+            mar.client.consoleScreen.handleConsoleBufferUpdate(
+                message.console_message_buffer,
+                message.console_mode as ConsoleMode);
 
             if (DEBUG) {
-                console.log("[MAR] Received " + message.c.length + " console message(s)")
+                console.log("[MAR] Received " + message.console_message_buffer.length + " console message(s)")
             }
         }
     }
@@ -108,6 +110,7 @@ class UserInfoListener implements MessageListener {
         mar.client.worldX = message.worldX;
         mar.client.worldY = message.worldY;
         mar.client.dimension = message.dimension;
+        Debug.SELF_ID = message.id;
 
         //Maximum Universe width
         mar.client.maxWidth = message.maxWidth;
@@ -134,6 +137,8 @@ class AuthListener implements MessageListener {
             }
             mar.client.requestUserInfo();
 
+        } else if (message.m == "forbidden") {
+            alert("Authentication failed. Guest accounts are blocked on this server")
         } else {
             alert("Authentication failed. Please make sure you are logged in and reload the page.");
         }
@@ -161,7 +166,7 @@ class TerrainListener implements MessageListener {
 
             let worldSize = message.size;
             if (worldSize == undefined) {
-                worldSize = config.defaultWorldSize;
+                worldSize = config.world.defaultSize;
             }
 
 
@@ -199,7 +204,7 @@ class TerrainListener implements MessageListener {
                     console.log("[MAR] Updating World terrain");
                 }
 
-                mar.world.updateTerrain([], config.defaultWorldSize);
+                mar.world.updateTerrain([], config.world.defaultSize);
 
             } else {
 
@@ -207,7 +212,7 @@ class TerrainListener implements MessageListener {
                     console.log("[MAR] Creating new World");
                 }
 
-                mar.world = new World([], config.defaultWorldSize);
+                mar.world = new World([], config.world.defaultSize);
 
             }
             if (mar.world) {
@@ -343,7 +348,6 @@ class GameClient {
         this.socket.send(JSON.stringify(json));
     }
 
-
     /**
      * Get server info from game website
      */
@@ -364,7 +368,7 @@ class GameClient {
                     console.log("[MAR] Received server info " + xhr.responseText);
                 }
 
-                setTimeout(self.connectToGameServer(JSON.parse(xhr.responseText)), 100);
+                setTimeout(() => self.connectToGameServer(JSON.parse(xhr.responseText)), 100);
             }
         };
         xhr.send(null);
@@ -454,7 +458,7 @@ class GameClient {
 
             let self = this;
 
-            this.keyboardBuffer = new KeyboardBuffer(config.kbBufferX, config.kbBufferY);
+            this.keyboardBuffer = new KeyboardBuffer(config.kbBuffer.x, config.kbBuffer.y);
             mar.addDebugMessage(this.keyboardBuffer);
 
 

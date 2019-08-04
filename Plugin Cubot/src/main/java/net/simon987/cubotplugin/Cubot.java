@@ -1,12 +1,15 @@
 package net.simon987.cubotplugin;
 
+import net.simon987.cubotplugin.event.CubotWalkEvent;
+import net.simon987.cubotplugin.event.DeathEvent;
 import net.simon987.server.GameServer;
-import net.simon987.server.ServerConfiguration;
+import net.simon987.server.IServerConfiguration;
 import net.simon987.server.assembly.CPU;
 import net.simon987.server.assembly.HardwareModule;
 import net.simon987.server.assembly.Memory;
 import net.simon987.server.assembly.Status;
 import net.simon987.server.assembly.exception.CancelledException;
+import net.simon987.server.event.GameEvent;
 import net.simon987.server.game.item.Item;
 import net.simon987.server.game.item.ItemVoid;
 import net.simon987.server.game.objects.*;
@@ -15,39 +18,12 @@ import org.bson.Document;
 import org.json.simple.JSONObject;
 
 import java.awt.*;
-import java.util.*;
 import java.util.List;
+import java.util.*;
 
-public class Cubot extends GameObject implements Updatable, ControllableUnit, MessageReceiver,
-        Attackable, Rechargeable, HardwareHost {
+public class Cubot extends GameObject implements Updatable, ControllableUnit, MessageReceiver {
 
-    private static final char MAP_INFO = 0x0080;
-
-    /**
-     * Hologram value that is displayed
-     * <br>TODO: Move to CubotHologram class
-     */
-    private int hologram = 0;
-    /**
-     * Hologram string that is displayed
-     * <br>TODO: Move to CubotHologram class
-     */
-    private String hologramString = "";
-    /**
-     * Hologram mode that was set during this tick
-     * <br>TODO: Move to CubotHologram class
-     */
-    private HologramMode hologramMode = HologramMode.CLEARED;
-    /**
-     * Hologram mode at the end of the last tick
-     * <br>TODO: Move to CubotHologram class
-     */
-    private HologramMode lastHologramMode = HologramMode.CLEARED;
-    /**
-     * Hologram color code. Format is handled by the client
-     * <br>TODO: Move to CubotHologram class
-     */
-    private int hologramColor = 0;
+    private static final char MAP_INFO = 0x0200;
 
     /**
      * Hit points
@@ -118,24 +94,9 @@ public class Cubot extends GameObject implements Updatable, ControllableUnit, Me
     private User parent;
 
     /**
-     * Energy units in kJ
-     */
-    private int energy;
-
-    /**
-     * Maximum energy units in kJ
-     */
-    private int maxEnergy;
-
-    /**
-     * Solar panel multiplier
-     * <br>TODO: Set this constant in dimension
-     */
-    private static final float SOLAR_PANEL_MULTIPLIER = 1;
-    /**
      * Maximum size of the console buffer (also called 'internal buffer')
      */
-    private static final int CONSOLE_BUFFER_MAX_SIZE = 40;
+    public static final int CONSOLE_BUFFER_MAX_SIZE = 40;
 
     /**
      * List of attached hardware, 'modules'
@@ -147,29 +108,6 @@ public class Cubot extends GameObject implements Updatable, ControllableUnit, Me
      * Cubot's brain box
      */
     private CPU cpu;
-
-    /**
-     * Display mode of the hologram hardware
-     * <br>TODO: move this inside CubotHologram class
-     */
-    public enum HologramMode {
-        /**
-         * Display nothing
-         */
-        CLEARED,
-        /**
-         * Display value as hexadecimal in format 0x0000
-         */
-        HEX,
-        /**
-         * Display string
-         */
-        STRING,
-        /**
-         * Display value as decimal
-         */
-        DEC
-    }
 
     public enum ConsoleMode {
         /**
@@ -192,10 +130,8 @@ public class Cubot extends GameObject implements Updatable, ControllableUnit, Me
         hp = document.getInteger("hp");
         shield = document.getInteger("shield");
         setDirection(Direction.getDirection(document.getInteger("direction")));
-        energy = document.getInteger("energy");
 
-        ServerConfiguration config = GameServer.INSTANCE.getConfig();
-        maxEnergy = config.getInt("battery_max_energy");
+        IServerConfiguration config = GameServer.INSTANCE.getConfig();
         maxHp = config.getInt("cubot_max_hp");
         maxShield = config.getInt("cubot_max_shield");
 
@@ -219,19 +155,15 @@ public class Cubot extends GameObject implements Updatable, ControllableUnit, Me
         return MAP_INFO;
     }
 
-    /**
-     * Called every tick
-     */
     @Override
     public void update() {
-
-        storeEnergy((int) (SOLAR_PANEL_MULTIPLIER * GameServer.INSTANCE.getDayNightCycle().getSunIntensity()));
-
         if (currentAction == Action.WALKING) {
             if (spendEnergy(100)) {
                 if (!incrementLocation()) {
                     //Couldn't walk
                     currentAction = Action.IDLE;
+                }else{
+                    GameServer.INSTANCE.getEventDispatcher().dispatch(new CubotWalkEvent(this));
                 }
             } else {
                 currentAction = Action.IDLE;
@@ -247,8 +179,6 @@ public class Cubot extends GameObject implements Updatable, ControllableUnit, Me
         currentAction = Action.IDLE;
 
         //Same principle for hologram
-        lastHologramMode = hologramMode;
-        hologramMode = HologramMode.CLEARED;
 
         //And the console
         lastConsoleMode = consoleMode;
@@ -260,6 +190,10 @@ public class Cubot extends GameObject implements Updatable, ControllableUnit, Me
         //And the status..
         lastStatus = currentStatus;
         currentStatus = 0;
+
+        for (HardwareModule module : hardwareAddresses.values()) {
+            module.update();
+        }
     }
 
     @Override
@@ -272,14 +206,16 @@ public class Cubot extends GameObject implements Updatable, ControllableUnit, Me
         json.put("hp", hp);
         json.put("shield", shield);
         json.put("action", lastAction.ordinal());
-        json.put("holo", hologram);
-        json.put("holoStr", hologramString);
-        json.put("holoMode", lastHologramMode.ordinal());
-        json.put("holoC", hologramColor);
-        json.put("energy", energy);
 
         if (parent != null) {
             json.put("parent", parent.getUsername()); //Only used client-side for now
+        }
+
+        for (HardwareModule module : hardwareAddresses.values()) {
+            JSONObject hwJson = module.jsonSerialise();
+            if (hwJson != null) {
+                json.put(module.getClass().getName(), hwJson);
+            }
         }
 
         return json;
@@ -293,11 +229,6 @@ public class Cubot extends GameObject implements Updatable, ControllableUnit, Me
         dbObject.put("hp", hp);
         dbObject.put("shield", shield);
         dbObject.put("action", lastAction.ordinal());
-        dbObject.put("holo", hologram);
-        dbObject.put("holoStr", hologramString);
-        dbObject.put("holoMode", lastHologramMode.ordinal());
-        dbObject.put("holoC", hologramColor);
-        dbObject.put("energy", energy);
 
         if (parent != null) {
             dbObject.put("parent", parent.getUsername()); //Only used client-side for now
@@ -327,20 +258,23 @@ public class Cubot extends GameObject implements Updatable, ControllableUnit, Me
         setDead(false);
         setHp(maxHp);
         setShield(0);
-        setEnergy(maxEnergy);
+        setEnergy(((CubotBattery) getHardware(CubotBattery.class)).getMaxEnergy());
         clearKeyboardBuffer();
         consoleMessagesBuffer.clear();
         lastConsoleMessagesBuffer.clear();
-        hologramColor = 0;
         currentStatus = 0;
         lastStatus = 0;
         addStatus(CubotStatus.FACTORY_NEW);
+
+        for (HardwareModule module : hardwareAddresses.values()) {
+            module.reset();
+        }
     }
 
     @Override
     public boolean onDeadCallback() {
-        //TODO make death event instead
-//        LogManager.LOGGER.info(getParent().getUsername() + "'s Cubot died");
+        GameEvent event = new DeathEvent(this);
+        GameServer.INSTANCE.getEventDispatcher().dispatch(event);
 
         reset();
 
@@ -348,7 +282,7 @@ public class Cubot extends GameObject implements Updatable, ControllableUnit, Me
         this.getWorld().removeObject(this);
         this.getWorld().decUpdatable();
 
-        ServerConfiguration config = GameServer.INSTANCE.getConfig();
+        IServerConfiguration config = GameServer.INSTANCE.getConfig();
         Random random = new Random();
 
         int spawnX = config.getInt("new_user_worldX") + random.nextInt(5);
@@ -401,44 +335,42 @@ public class Cubot extends GameObject implements Updatable, ControllableUnit, Me
         return currentAction;
     }
 
-    public void setHologram(int hologram) {
-        this.hologram = hologram;
-    }
-
-
-    public void setHologramString(String hologramString) {
-        this.hologramString = hologramString;
-    }
-
     public int getEnergy() {
-        return energy;
+        CubotBattery battery = (CubotBattery) getHardware(CubotBattery.class);
+        return battery.getEnergy();
     }
 
     public void setEnergy(int energy) {
-        this.energy = energy;
+        CubotBattery battery = (CubotBattery) getHardware(CubotBattery.class);
+        battery.setEnergy(energy);
     }
 
     public boolean spendEnergy(int amount) {
 
-        if (energy - amount < 0) {
+        CubotBattery battery = (CubotBattery) getHardware(CubotBattery.class);
+
+        if (battery.getEnergy() - amount < 0) {
             return false;
         } else {
-            energy -= amount;
+            battery.setEnergy(battery.getEnergy() - amount);
             return true;
         }
     }
 
     public void storeEnergy(int amount) {
 
-        energy = Math.min(energy + amount, maxEnergy);
+        CubotBattery battery = (CubotBattery) getHardware(CubotBattery.class);
+        battery.setEnergy(Math.min(battery.getEnergy() + amount, battery.getMaxEnergy()));
     }
 
     public void setMaxEnergy(int maxEnergy) {
-        this.maxEnergy = maxEnergy;
+        CubotBattery battery = (CubotBattery) getHardware(CubotBattery.class);
+        battery.setMaxEnergy(maxEnergy);
     }
 
     public int getMaxEnergy() {
-        return maxEnergy;
+        CubotBattery battery = (CubotBattery) getHardware(CubotBattery.class);
+        return battery.getMaxEnergy();
     }
 
     public int getShield() {
@@ -479,8 +411,7 @@ public class Cubot extends GameObject implements Updatable, ControllableUnit, Me
     @Override
     public Memory getFloppyData() {
 
-        //TODO change DEFAULT_ADDRESS to getHW(class) to allow mutable addresses
-        CubotFloppyDrive drive = ((CubotFloppyDrive) getHardware(CubotFloppyDrive.DEFAULT_ADDRESS));
+        CubotFloppyDrive drive = (CubotFloppyDrive) getHardware(CubotFloppyDrive.class);
 
         if (drive.getFloppy() != null) {
             return drive.getFloppy().getMemory();
@@ -492,10 +423,6 @@ public class Cubot extends GameObject implements Updatable, ControllableUnit, Me
     @Override
     public boolean isAt(int x, int y) {
         return false;
-    }
-
-    public void setHologramMode(HologramMode hologramMode) {
-        this.hologramMode = hologramMode;
     }
 
     @Override
@@ -525,10 +452,6 @@ public class Cubot extends GameObject implements Updatable, ControllableUnit, Me
 
     public void setConsoleMode(ConsoleMode consoleMode) {
         this.consoleMode = consoleMode;
-    }
-
-    public void setHologramColor(int hologramColor) {
-        this.hologramColor = hologramColor;
     }
 
     public void addStatus(CubotStatus status) {
@@ -580,6 +503,7 @@ public class Cubot extends GameObject implements Updatable, ControllableUnit, Me
     public void setMaxShield(int maxShield) {
         this.maxShield = maxShield;
     }
+
     @Override
     public void heal(int amount) {
         hp += amount;
@@ -603,11 +527,13 @@ public class Cubot extends GameObject implements Updatable, ControllableUnit, Me
         }
     }
 
+    @Override
     public void attachHardware(HardwareModule hardware, int address) {
         hardwareAddresses.put(address, hardware);
         hardwareModules.put(hardware.getClass(), address);
     }
 
+    @Override
     public void detachHardware(int address) {
         hardwareAddresses.remove(address);
 
@@ -620,6 +546,7 @@ public class Cubot extends GameObject implements Updatable, ControllableUnit, Me
         hardwareModules.remove(toRemove);
     }
 
+    @Override
     public boolean hardwareInterrupt(int address, Status status) {
         HardwareModule hardware = hardwareAddresses.get(address);
 
@@ -631,9 +558,9 @@ public class Cubot extends GameObject implements Updatable, ControllableUnit, Me
         }
     }
 
+    @Override
     public int hardwareQuery(int address) {
         HardwareModule hardware = hardwareAddresses.get(address);
-
 
         if (hardware != null) {
             return hardware.getId();

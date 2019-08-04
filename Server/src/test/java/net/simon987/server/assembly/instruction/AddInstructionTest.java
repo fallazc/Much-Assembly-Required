@@ -1,6 +1,6 @@
 package net.simon987.server.assembly.instruction;
 
-import net.simon987.server.ServerConfiguration;
+import net.simon987.server.ConfigHelper;
 import net.simon987.server.assembly.Memory;
 import net.simon987.server.assembly.Register;
 import net.simon987.server.assembly.RegisterSet;
@@ -9,17 +9,14 @@ import org.junit.Test;
 
 import static org.junit.Assert.*;
 
-
 public class AddInstructionTest {
-
 
     /**
      * ADD mem/reg, mem/reg
      */
     @Test
     public void addTargetTarget() {
-        ServerConfiguration config = new ServerConfiguration("config.properties");
-        int memorySize = config.getInt("memory_size");
+        int memorySize = ConfigHelper.getConfig().getInt("memory_size");
 
         //Memory
         Memory memory = new Memory(memorySize);
@@ -129,8 +126,7 @@ public class AddInstructionTest {
      */
     @Test
     public void addTargetImm() {
-        ServerConfiguration config = new ServerConfiguration("config.properties");
-        int memorySize = config.getInt("memory_size");
+        int memorySize = ConfigHelper.getConfig().getInt("memory_size");
 
         //Memory
         Memory memory = new Memory(memorySize);

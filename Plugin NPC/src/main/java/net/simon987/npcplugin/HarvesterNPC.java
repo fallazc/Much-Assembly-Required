@@ -12,7 +12,6 @@ public class HarvesterNPC extends NonPlayerCharacter {
     public static final int MAX_HEALTH = GameServer.INSTANCE.getConfig().getInt("harvester_hp_max");
     public static final int HEAL_RATE = GameServer.INSTANCE.getConfig().getInt("harvester_regen");
 
-
     public HarvesterNPC() {
         setTask(new HarvestTask());
 
@@ -31,10 +30,9 @@ public class HarvesterNPC extends NonPlayerCharacter {
 
     @Override
     public void update() {
-
         super.update();
 
-        if (getFactory() != null) {
+        if (getSettlement() != null) {
             if (getTask().checkCompleted()) {
 
                 setTask(new HarvestTask());
@@ -55,8 +53,8 @@ public class HarvesterNPC extends NonPlayerCharacter {
 
         getWorld().decUpdatable();
 
-        if (getFactory() != null && getFactory().getNpcs() != null) {
-            getFactory().getNpcs().remove(this);
+        if (getSettlement() != null && getSettlement().getNpcs() != null) {
+            getSettlement().getNpcs().remove(this);
         }
 
         GameServer.INSTANCE.getEventDispatcher().dispatch(new ObjectDeathEvent(this));

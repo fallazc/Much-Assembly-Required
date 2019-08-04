@@ -1,7 +1,7 @@
 package net.simon987.server.game.world;
 
 import net.simon987.server.GameServer;
-import net.simon987.server.ServerConfiguration;
+import net.simon987.server.IServerConfiguration;
 import net.simon987.server.assembly.exception.CancelledException;
 import net.simon987.server.event.GameEvent;
 import net.simon987.server.event.WorldGenerationEvent;
@@ -30,10 +30,15 @@ public class WorldGenerator {
      */
     private int wallPlainRatio;
 
+    private int fluidCenterPointMin;
+    private int fluidCenterPointMax;
+
     private int minIronCount;
     private int maxIronCount;
     private int minCopperCount;
     private int maxCopperCount;
+
+    private String dimension;
 
     private static final int DEFAULT_WORLD_SIZE = 16;
 
@@ -43,7 +48,9 @@ public class WorldGenerator {
     private HashMap<Point, Integer> centerPointsMap;
 
 
-    public WorldGenerator(ServerConfiguration config) {
+    public WorldGenerator(IServerConfiguration config) {
+
+        dimension = config.getString("new_user_dimension");
 
         centerPointCountMin = config.getInt("wg_centerPointCountMin");
         centerPointCountMax = config.getInt("wg_centerPointCountMax");
@@ -52,6 +59,8 @@ public class WorldGenerator {
         maxIronCount = config.getInt("wg_maxIronCount");
         minCopperCount = config.getInt("wg_minCopperCount");
         maxCopperCount = config.getInt("wg_maxCopperCount");
+        fluidCenterPointMin = config.getInt("wg_fluidCenterPointMin");
+        fluidCenterPointMax = config.getInt("wg_fluidCenterPointMax");
     }
 
     /**
@@ -60,7 +69,6 @@ public class WorldGenerator {
     private static int distanceBetween(int x1, int y1, int x2, int y2) {
 
         return (int) Math.sqrt(Math.pow(x1 - x2, 2) + Math.pow(y1 - y2, 2));
-
     }
 
     private int getClosestCenterPointTile(int x, int y) {
@@ -79,15 +87,14 @@ public class WorldGenerator {
 
 
         return closest;
-
     }
 
     /**
      * Generates an empty World
      */
-    private static World generateEmptyWorld(int locX, int locY) {
+    private static World generateEmptyWorld(int locX, int locY, String dimension) {
 
-        return new World(locX, locY, new TileMap(DEFAULT_WORLD_SIZE, DEFAULT_WORLD_SIZE), "w-");
+        return new World(locX, locY, new TileMap(DEFAULT_WORLD_SIZE, DEFAULT_WORLD_SIZE), dimension);
     }
 
     /**
@@ -96,17 +103,22 @@ public class WorldGenerator {
     public World generateWorld(int locX, int locY) throws CancelledException {
         Random random = new Random();
 
-        World world = generateEmptyWorld(locX, locY);
+        World world = generateEmptyWorld(locX, locY, dimension);
 
         centerPointsMap = new HashMap<>(16);
 
         int centerPointCount = random.nextInt(centerPointCountMax - centerPointCountMin) + centerPointCountMin;
+        int fluidCenterPointCount = random.nextInt((fluidCenterPointMax - fluidCenterPointMin) + fluidCenterPointMin);
 
         //Create center points
         for (int i = centerPointCount; i >= 0; i--) {
 
             int tile = random.nextInt(wallPlainRatio) == 0 ? 1 : 0;
             centerPointsMap.put(new Point(random.nextInt(DEFAULT_WORLD_SIZE), random.nextInt(DEFAULT_WORLD_SIZE)), tile);
+        }
+
+        for (int i = fluidCenterPointCount; i >= 0; i--) {
+            centerPointsMap.put(new Point(random.nextInt(DEFAULT_WORLD_SIZE), random.nextInt(DEFAULT_WORLD_SIZE)), TileFluid.ID);
         }
 
         //Fill unset tiles
@@ -139,27 +151,26 @@ public class WorldGenerator {
                 if (x == 0 || x == DEFAULT_WORLD_SIZE - 1) {
                     //Vertical (West & East) walls
                     if (y < 6 || y > 9) {
-                        tile = 1;
+                        tile = TileWall.ID;
                     } else {
-                        tile = 0;
+                        tile = TilePlain.ID;
                     }
                 }
                 if (y == 0 || y == DEFAULT_WORLD_SIZE - 1) {
                     // Horizontal (North & South) walls
                     if (x < 6 || x > 9) {
-                        tile = 1;
+                        tile = TileWall.ID;
                     } else {
-                        tile = 0;
+                        tile = TilePlain.ID;
                     }
                 }
                 if (((x == 1 || x == DEFAULT_WORLD_SIZE - 2) && y > 0 && y < DEFAULT_WORLD_SIZE - 1) ||
                         ((y == 1 || y == DEFAULT_WORLD_SIZE - 2) && x > 0 && x < DEFAULT_WORLD_SIZE - 1)) {
                     //Inner border
-                    tile = 0;
+                    tile = TilePlain.ID;
                 }
 
-
-                world.getTileMap().getTiles()[x][y] = tile;
+                world.getTileMap().setTileAt(tile, x, y);
             }
         }
 
@@ -169,18 +180,18 @@ public class WorldGenerator {
 
         for (int i = 0; i < ironCount; i++) {
 
-            Point p = world.getTileMap().getRandomTile(TileMap.PLAIN_TILE);
+            Point p = world.getTileMap().getRandomTile(TilePlain.ID);
 
             if (p != null) {
-                world.getTileMap().getTiles()[p.x][p.y] = TileMap.IRON_TILE;
+                world.getTileMap().setTileAt(new TileIron(), p.x, p.y);
             }
         }
         for (int i = 0; i < copperCount; i++) {
 
-            Point p = world.getTileMap().getRandomTile(TileMap.PLAIN_TILE);
+            Point p = world.getTileMap().getRandomTile(TilePlain.ID);
 
             if (p != null) {
-                world.getTileMap().getTiles()[p.x][p.y] = TileMap.COPPER_TILE;
+                world.getTileMap().setTileAt(new TileCopper(), p.x, p.y);
             }
         }
 
@@ -192,5 +203,4 @@ public class WorldGenerator {
 
         return world;
     }
-
 }

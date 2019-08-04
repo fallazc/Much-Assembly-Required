@@ -1,13 +1,12 @@
 package net.simon987.biomassplugin.event;
 
 import net.simon987.biomassplugin.BiomassBlob;
-import net.simon987.server.ServerConfiguration;
+import net.simon987.server.IServerConfiguration;
 import net.simon987.server.event.GameEvent;
 import net.simon987.server.event.GameEventListener;
 import net.simon987.server.event.ObjectDeathEvent;
 import net.simon987.server.game.objects.GameObject;
 import net.simon987.server.game.world.World;
-import net.simon987.server.logging.LogManager;
 import org.bson.types.ObjectId;
 
 /**
@@ -17,9 +16,8 @@ public class ObjectDeathListener implements GameEventListener {
 
     private int biomassDropCount;
 
-    public ObjectDeathListener(ServerConfiguration config) {
+    public ObjectDeathListener(IServerConfiguration config) {
         biomassDropCount = config.getInt("harvester_biomass_drop_count");
-
     }
 
     @Override
@@ -42,8 +40,6 @@ public class ObjectDeathListener implements GameEventListener {
                         dyingHarvesterNPC.getX(), dyingHarvesterNPC.getY(), dyingHarvesterNPC.getWorld());
                 //Add it to the world game objects
                 dyingHarvesterNPC.getWorld().addObject(newBiomassBlob);
-                LogManager.LOGGER.fine("Spawned biomass at (" + newBiomassBlob.getX() +
-                        ", " + newBiomassBlob.getY() + ")");
             }
         }
     }

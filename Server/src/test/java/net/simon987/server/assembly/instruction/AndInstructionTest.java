@@ -1,19 +1,17 @@
 package net.simon987.server.assembly.instruction;
 
-import net.simon987.server.ServerConfiguration;
+import net.simon987.server.ConfigHelper;
 import net.simon987.server.assembly.Memory;
 import net.simon987.server.assembly.Status;
 import org.junit.Test;
 
 import static org.junit.Assert.assertEquals;
 
-
 public class AndInstructionTest {
+
     @Test
     public void executeTargetTarget() {
-
-        ServerConfiguration config = new ServerConfiguration("config.properties");
-        int memorySize = config.getInt("memory_size");
+        int memorySize = ConfigHelper.getConfig().getInt("memory_size");
 
         //Memory
         Memory memory = new Memory(memorySize);
@@ -53,9 +51,7 @@ public class AndInstructionTest {
 
     @Test
     public void executeTargetImm() {
-
-        ServerConfiguration config = new ServerConfiguration("config.properties");
-        int memorySize = config.getInt("memory_size");
+        int memorySize = ConfigHelper.getConfig().getInt("memory_size");
 
         //Memory
         Memory memory = new Memory(memorySize);

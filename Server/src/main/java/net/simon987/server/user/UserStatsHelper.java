@@ -1,7 +1,6 @@
 package net.simon987.server.user;
 
 import com.mongodb.client.MongoCollection;
-import com.mongodb.client.MongoCursor;
 import net.simon987.server.GameServer;
 import org.bson.Document;
 
@@ -36,12 +35,38 @@ public class UserStatsHelper {
         ArrayList<Map.Entry<User, Integer>> rows = new ArrayList<>();
 
         Document orderBy = new Document("$stats." + statName, -1);
-        MongoCursor<Document> cursor = users.find().sort(orderBy).limit(n).iterator();
 
-        while (cursor.hasNext()) {
-            Document dbUser = cursor.next();
+        for (Document dbUser : users.find().sort(orderBy).limit(n)) {
             User user = GameServer.INSTANCE.getGameUniverse().getUser((String) dbUser.get("username"));
-            rows.add(new AbstractMap.SimpleEntry<>(user, user.getStats().getInt(statName)));
+            int val = 0;
+            if (user.getStats().getInt(statName) > 0) {
+                val = user.getStats().getInt(statName);
+            }
+            rows.add(new AbstractMap.SimpleEntry<>(user, val));
+        }
+
+        return rows;
+    }
+
+    /**
+     * Get top n players along with all their stat values, in descending order of completed vaults
+     *
+     * @param n Maximum number of players
+     * @return Top n players, in User,value format, in descending order
+     */
+    public ArrayList<Map.Entry<User, Map<String, Integer>>> getLeaderboardStats(int n) {
+
+        ArrayList<Map.Entry<User, Map<String, Integer>>> rows = new ArrayList<>(n);
+
+        List<User> users = getTopNSetSize("completedVaults", n);
+
+        for (User user : users) {
+            Map<String, Integer> allStats = new HashMap<>();
+            allStats.put("completedVaults", user.getStats().getSet("completedVaults").size());
+            allStats.put("death", user.getStats().getInt("death"));
+            allStats.put("executionTime", user.getStats().getInt("executionTime"));
+            allStats.put("walkDistance", user.getStats().getInt("walkDistance"));
+            rows.add(new AbstractMap.SimpleEntry<>(user, allStats));
         }
 
         return rows;
@@ -54,9 +79,9 @@ public class UserStatsHelper {
      * @param n        Maximum number of players
      * @return Top n players, in User,set format, in descending order
      */
-    public ArrayList<Map.Entry<User, ArrayList>> getTopNSetLength(String statName, int n) {
+    private List<User> getTopNSetSize(String statName, int n) {
 
-        ArrayList<Map.Entry<User, ArrayList>> rows = new ArrayList<>();
+        ArrayList<User> rows = new ArrayList<>();
 
         List<Object> ifNullList = new ArrayList<>(2);
         ifNullList.add("$stats." + statName);
@@ -66,16 +91,13 @@ public class UserStatsHelper {
         project.put("setLength", new Document("$size", new Document("$ifNull", ifNullList)));
         project.put("username", 1);
 
-
-        Iterator<Document> results = users.aggregate(Arrays.asList(
+        for (Document document : users.aggregate(Arrays.asList(
                 new Document("$project", project),
                 new Document("$sort", new Document("setLength", -1)),
                 new Document("$limit", n))
-        ).iterator();
-
-        while (results.hasNext()) {
-            User user = GameServer.INSTANCE.getGameUniverse().getUser((String) results.next().get("username"));
-            rows.add(new AbstractMap.SimpleEntry<>(user, user.getStats().getSet(statName)));
+        )) {
+            User user = GameServer.INSTANCE.getGameUniverse().getUser((String) document.get("username"));
+            rows.add(user);
         }
 
         return rows;

@@ -1,10 +1,10 @@
 package net.simon987.npcplugin;
 
+import net.simon987.npcplugin.world.TileVaultFloor;
 import net.simon987.server.GameServer;
-import net.simon987.server.ServerConfiguration;
+import net.simon987.server.IServerConfiguration;
 import net.simon987.server.game.objects.Direction;
 import net.simon987.server.game.world.Location;
-import net.simon987.server.game.world.TileMap;
 import net.simon987.server.game.world.World;
 import net.simon987.server.logging.LogManager;
 import org.bson.types.ObjectId;
@@ -29,7 +29,7 @@ public class VaultDimension {
 
     public VaultDimension(VaultDoor vaultDoor) {
 
-        name = "v" + vaultDoor.getObjectId() + "-";
+        name = "v" + vaultDoor.getObjectId();
 
         /*
          * Creates a group of vault worlds and pieces them together with openings.
@@ -49,7 +49,7 @@ public class VaultDimension {
          * as a set of coordinates + a list of opening directions, then they are actually generated
          */
 
-        ServerConfiguration config = GameServer.INSTANCE.getConfig();
+        IServerConfiguration config = GameServer.INSTANCE.getConfig();
 
         int minLayerCount = config.getInt("vault_wg_min_layer_count");
         int maxLayerCount = config.getInt("vault_wg_max_layer_count");
@@ -140,7 +140,7 @@ public class VaultDimension {
         //4. Choose a random world from the last layer and create the vault box there (objective)
         World objectiveWorld = lastLayerWorlds.get(random.nextInt(lastLayerWorlds.size()));
 
-        Point exitPortalPt = objectiveWorld.getRandomTileWithAdjacent(8, TileMap.VAULT_FLOOR);
+        Point exitPortalPt = objectiveWorld.getRandomTileWithAdjacent(8, TileVaultFloor.ID);
 
         if (exitPortalPt != null) {
 
@@ -159,7 +159,7 @@ public class VaultDimension {
         }
 
         //5. Create an exit portal in the home World
-        Point homePortalPt = homeWorld.getRandomTileWithAdjacent(8, TileMap.VAULT_FLOOR);
+        Point homePortalPt = homeWorld.getRandomTileWithAdjacent(8, TileVaultFloor.ID);
         if (homePortalPt != null) {
 
             Portal homePortal = new Portal();
@@ -237,6 +237,8 @@ public class VaultDimension {
                     openings.add(Direction.WEST);
                     attachedWorld.openings.add(Direction.EAST);
                     break;
+                default:
+                	break;
             }
 
             attachedWorld.coords.x = coords.x + direction.dX;

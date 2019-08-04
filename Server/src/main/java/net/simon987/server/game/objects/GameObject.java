@@ -1,8 +1,9 @@
 package net.simon987.server.game.objects;
 
 import net.simon987.server.GameServer;
+import net.simon987.server.game.world.Tile;
 import net.simon987.server.game.world.World;
-import net.simon987.server.io.JSONSerialisable;
+import net.simon987.server.io.JSONSerializable;
 import net.simon987.server.io.MongoSerializable;
 import org.bson.Document;
 import org.bson.types.ObjectId;
@@ -15,7 +16,7 @@ import java.util.ArrayList;
  * An instance of an object (e.g. a Cubot, a NPC...) inside the
  * game universe
  */
-public abstract class GameObject implements JSONSerialisable, MongoSerializable {
+public abstract class GameObject implements JSONSerializable, MongoSerializable {
 
     private boolean dead;
     /**
@@ -102,10 +103,15 @@ public abstract class GameObject implements JSONSerialisable, MongoSerializable 
             }
 
             //Check collision
-            if (!world.isTileBlocked(newX, newY)) { //Check for collision
-                //Tile is passable
-                x = newX;
-                y = newY;
+            if (this.world.getGameObjectsBlockingAt(newX, newY).size() > 0) {
+                return false;
+            }
+
+            Tile tile = world.getTileMap().getTileAt(newX, newY);
+            if (tile.walk(this)) {
+
+                this.setX(newX);
+                this.setY(newY);
                 return true;
             } else {
                 return false;
@@ -151,32 +157,19 @@ public abstract class GameObject implements JSONSerialisable, MongoSerializable 
 
     public int getAdjacentTileCount(boolean diagonals) {
 
+        int[] xPositions = {1, 0, -1, 0, 1, -1, 1, -1};
+        int[] yPositions = {0, 1, 0, -1, 1, 1, -1, -1};
+
+        int range = diagonals ? xPositions.length : xPositions.length / 2;
+
         int count = 0;
 
-        if (!getWorld().isTileBlocked(getX() + 1, getY())) {
-            count++;
-        }
-        if (!getWorld().isTileBlocked(getX(), getY() + 1)) {
-            count++;
-        }
-        if (!getWorld().isTileBlocked(getX() - 1, getY())) {
-            count++;
-        }
-        if (!getWorld().isTileBlocked(getX(), getY() - 1)) {
-            count++;
-        }
+        for (int index = 0; index < range; index++) {
+            int currentX = x + xPositions[index];
+            int currentY = y + yPositions[index];
 
-        if (diagonals) {
-            if (!getWorld().isTileBlocked(getX() + 1, getY() + 1)) {
-                count++;
-            }
-            if (!getWorld().isTileBlocked(getX() - 1, getY() + 1)) {
-                count++;
-            }
-            if (!getWorld().isTileBlocked(getX() + 1, getY() - 1)) {
-                count++;
-            }
-            if (!getWorld().isTileBlocked(getX() - 1, getY() - 1)) {
+            if (getWorld().getTileMap().isInBounds(currentX, currentY) &&
+                    !getWorld().isTileBlocked(currentX, currentY)) {
                 count++;
             }
         }

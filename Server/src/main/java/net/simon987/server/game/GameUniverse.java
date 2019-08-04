@@ -1,11 +1,11 @@
 package net.simon987.server.game;
 
-import com.mongodb.MongoClient;
+import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoCursor;
 import com.mongodb.client.MongoDatabase;
 import net.simon987.server.GameServer;
-import net.simon987.server.ServerConfiguration;
+import net.simon987.server.IServerConfiguration;
 import net.simon987.server.assembly.exception.CancelledException;
 import net.simon987.server.game.objects.GameObject;
 import net.simon987.server.game.world.World;
@@ -20,7 +20,6 @@ import java.util.concurrent.ConcurrentHashMap;
 
 public class GameUniverse {
 
-    //private ArrayList<World> worlds;
     private ConcurrentHashMap<String, World> worlds;
     //username:user
     private ConcurrentHashMap<String, User> users;
@@ -33,7 +32,7 @@ public class GameUniverse {
 
     private int maxWidth = 0xFFFF;
 
-    public GameUniverse(ServerConfiguration config) {
+    public GameUniverse(IServerConfiguration config) {
 
         worlds = new ConcurrentHashMap<>(256);
         users = new ConcurrentHashMap<>(16);
@@ -82,6 +81,7 @@ public class GameUniverse {
      *
      * @return World, null if not found and not created. 
      */
+    @SuppressWarnings("SuspiciousNameCombination")
     public World getWorld(int x, int y, boolean createNew, String dimension) {
 
         // Wrapping coordinates around cyclically
@@ -112,6 +112,14 @@ public class GameUniverse {
         } else {
             return null;
         }
+    }
+
+    public World getWorld(String id, boolean createNew) {
+
+        String[] tokens = id.split("-");
+
+        return getWorld(Integer.decode(tokens[1]), Integer.decode(tokens[2]),
+                createNew, tokens[0]);
     }
 
     public World getLoadedWorld(int x, int y, String dimension) {
@@ -174,7 +182,7 @@ public class GameUniverse {
         return users.get(username);
     }
 
-    public User getOrCreateUser(String username, boolean makeControlledUnit) {
+    public User getOrCreateUser(String username, boolean makeControllableUnit) {
         User user = getUser(username);
 
         if (user != null) {
@@ -184,9 +192,8 @@ public class GameUniverse {
             LogManager.LOGGER.info("Creating new User: " + username);
 
             try {
-                if (makeControlledUnit) {
+                if (makeControllableUnit) {
                     user = new User();
-
 
                 } else {
                     user = new User(null);
@@ -225,6 +232,7 @@ public class GameUniverse {
         }
 
         LogManager.LOGGER.severe("Couldn't find object: " + id);
+        Thread.dumpStack();
         return null;
     }
 
@@ -253,12 +261,12 @@ public class GameUniverse {
         int i = 1;
 
         while (i < 50000) {
-            if (getUser("guest" + String.valueOf(i)) != null) {
+            if (getUser("guest" + i) != null) {
                 i++;
                 continue;
             }
 
-            return "guest" + String.valueOf(i);
+            return "guest" + i;
         }
 
         return null;

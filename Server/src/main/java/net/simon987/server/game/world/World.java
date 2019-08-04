@@ -25,10 +25,6 @@ public class World implements MongoSerializable {
      */
     private int worldSize;
 
-    private static final char INFO_BLOCKED = 0x8000;
-    private static final char INFO_IRON = 0x0200;
-    private static final char INFO_COPPER = 0x0100;
-
     private int x;
     private int y;
 
@@ -68,11 +64,7 @@ public class World implements MongoSerializable {
      * Check if a tile is blocked, either by a game object or an impassable tile type
      */
     public boolean isTileBlocked(int x, int y) {
-
-        int tile = tileMap.getTileAt(x, y);
-
-        return getGameObjectsBlockingAt(x, y).size() > 0 || tile == TileMap.WALL_TILE ||
-                tile == TileMap.VAULT_WALL || tile == TileMap.VOID;
+        return getGameObjectsBlockingAt(x, y).size() > 0 || tileMap.getTileAt(x, y).isBlocked();
     }
 
     /**
@@ -84,7 +76,7 @@ public class World implements MongoSerializable {
      * @return long
      */
     public static String idFromCoordinates(int x, int y, String dimension) {
-        return dimension + "0x" + Integer.toHexString(x) + "-" + "0x" + Integer.toHexString(y);
+        return dimension + "-0x" + Integer.toHexString(x) + "-" + "0x" + Integer.toHexString(y);
     }
 
     /**
@@ -111,20 +103,6 @@ public class World implements MongoSerializable {
         for (GameObject obj : gameObjects.values()) {
 
             if (obj.getClass().equals(clazz)) {
-                matchingObjects.add(obj);
-            }
-        }
-
-        return matchingObjects;
-    }
-
-
-    public ArrayList<GameObject> findObjects(int mapInfo) {
-
-        ArrayList<GameObject> matchingObjects = new ArrayList<>(2);
-
-        for (GameObject obj : gameObjects.values()) {
-            if ((obj.getMapInfo() & mapInfo) == mapInfo) {
                 matchingObjects.add(obj);
             }
         }
@@ -212,12 +190,13 @@ public class World implements MongoSerializable {
     @Override
     public String toString() {
 
-        StringBuilder str = new StringBuilder("World (" + x + ", " + y + ")\n");
-        int[][] tileMap = this.tileMap.getTiles();
+        StringBuilder str = new StringBuilder(String.format("World (%04X, %04X)\n", x, y));
 
-        for (int x = 0; x < worldSize; x++) {
-            for (int y = 0; y < worldSize; y++) {
-                str.append(tileMap[x][y]).append(" ");
+        char[][] mapInfo = getMapInfo();
+
+        for (int y = 0; y < worldSize; y++) {
+            for (int x = 0; x < worldSize; x++) {
+                str.append(String.format("%04X ", (int) mapInfo[x][y]));
             }
             str.append("\n");
         }
@@ -255,40 +234,30 @@ public class World implements MongoSerializable {
      * Get a binary representation of the map as an array of 16-bit bit fields, one word for each
      * tile.
      * <p>
-     * todo Performance cache this?
+     * Each tile is represented as such: <code>OOOOOOOOTTTTTTTB</code> where O is the object,
+     * T the tile and B if the tile is blocked or not
      */
     public char[][] getMapInfo() {
 
         char[][] mapInfo = new char[worldSize][worldSize];
-        int[][] tiles = tileMap.getTiles();
 
         //Tile
-        for (int y = 0; y < worldSize; y++) {
-            for (int x = 0; x < worldSize; x++) {
+        for (int x = 0; x < worldSize; x++) {
+            for (int y = 0; y < worldSize; y++) {
+                Tile tile = tileMap.getTileAt(x, y);
 
-                if (tiles[x][y] == TileMap.PLAIN_TILE) {
-                    mapInfo[x][y] = 0;
-
-                } else if (tiles[x][y] == TileMap.WALL_TILE || tiles[x][y] == TileMap.VAULT_WALL) {
-                    mapInfo[x][y] = INFO_BLOCKED;
-
-                } else if (tiles[x][y] == TileMap.COPPER_TILE) {
-                    mapInfo[x][y] = INFO_COPPER;
-
-                } else if (tiles[x][y] == TileMap.IRON_TILE) {
-                    mapInfo[x][y] = INFO_IRON;
-                }
+                mapInfo[x][y] = (char) (tile.isBlocked() ? 1 : 0);
+                mapInfo[x][y] |= (char) (tile.getId() << 1);
             }
         }
 
-        //Objects
         for (GameObject obj : gameObjects.values()) {
+            //Overwrite, only the last object on a tile is considered but the blocked bit is kept
+            mapInfo[obj.getX()][obj.getY()] &= 0x00FE;
             mapInfo[obj.getX()][obj.getY()] |= obj.getMapInfo();
-
         }
 
         return mapInfo;
-
     }
 
     /**
@@ -416,31 +385,6 @@ public class World implements MongoSerializable {
         return neighbouringWorlds;
     }
 
-    //Unused
-//    public ArrayList<World> getNeighbouringExistingWorlds(){
-//        ArrayList<World> neighbouringWorlds = new ArrayList<>();
-//
-//        if (universe == null){
-//            return neighbouringWorlds;
-//        }
-//
-//        for (int dx=-1; dx<=+1; dx+=2){
-//            World nw = universe.getWorld(x+dx,y,false);
-//            if (nw != null){
-//                neighbouringWorlds.add(nw);
-//            }
-//        }
-//        for (int dy=-1; dy<=+1; dy+=2){
-//            World nw = universe.getWorld(x,y+dy,false);
-//            if (nw != null){
-//                neighbouringWorlds.add(nw);
-//            }
-//        }
-//
-//        return neighbouringWorlds;
-//    }
-
-
     public boolean canUnload(){
         return updatable==0;
     }
@@ -468,6 +412,8 @@ public class World implements MongoSerializable {
      */
     public Point getRandomTileWithAdjacent(int n, int tile) {
         int counter = 0;
+        int[] xPositions = {1, 0, -1, 0, 1, -1, 1, -1};
+        int[] yPositions = {0, 1, 0, -1, 1, 1, -1, -1};
         while (true) {
             counter++;
 
@@ -481,29 +427,10 @@ public class World implements MongoSerializable {
             if (rTile != null) {
                 int adjacentTiles = 0;
 
-                if (!isTileBlocked(rTile.x, rTile.y - 1)) {
-                    adjacentTiles++;
-                }
-                if (!isTileBlocked(rTile.x + 1, rTile.y)) {
-                    adjacentTiles++;
-                }
-                if (!isTileBlocked(rTile.x, rTile.y + 1)) {
-                    adjacentTiles++;
-                }
-                if (!isTileBlocked(rTile.x - 1, rTile.y)) {
-                    adjacentTiles++;
-                }
-                if (!isTileBlocked(rTile.x + 1, rTile.y + 1)) {
-                    adjacentTiles++;
-                }
-                if (!isTileBlocked(rTile.x - 1, rTile.y + 1)) {
-                    adjacentTiles++;
-                }
-                if (!isTileBlocked(rTile.x + 1, rTile.y - 1)) {
-                    adjacentTiles++;
-                }
-                if (!isTileBlocked(rTile.x - 1, rTile.y - 1)) {
-                    adjacentTiles++;
+                for (int idx = 0; idx < xPositions.length; idx++) {
+                    if (tileMap.isInBounds(rTile.x + xPositions[idx], rTile.y + yPositions[idx]) && !isTileBlocked(rTile.x + xPositions[idx], rTile.y + yPositions[idx])) {
+                        adjacentTiles++;
+                    }
                 }
 
                 if (adjacentTiles >= n) {

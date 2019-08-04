@@ -1,16 +1,15 @@
 package net.simon987.server.assembly;
 
-import net.simon987.server.ServerConfiguration;
+import net.simon987.server.ConfigHelper;
 import org.junit.Test;
 
 import static org.junit.Assert.*;
 
-
 public class MemoryTest {
+    
     @Test
     public void getSet() {
-        ServerConfiguration config = new ServerConfiguration("config.properties");
-        int memorySize = config.getInt("memory_size");
+        int memorySize = ConfigHelper.getConfig().getInt("memory_size");
         Memory memory = new Memory(memorySize);
 
         memory.set(1, 1);
@@ -28,11 +27,8 @@ public class MemoryTest {
 
     @Test
     public void write() {
-
-        ServerConfiguration config = new ServerConfiguration("config.properties");
-        int memorySize = config.getInt("memory_size");
+        int memorySize = ConfigHelper.getConfig().getInt("memory_size");
         Memory memory = new Memory(memorySize);
-
 
         assertTrue(memory.write(0, new char[memorySize], 0, memorySize));
         assertFalse(memory.write(0, new char[memorySize], 0, memorySize + 1));
